@@ -9,22 +9,22 @@ use async_trait::async_trait;
 use crate::statement::*;
 
 #[async_trait]
-pub trait Solution {
-    async fn solve(repositories: Vec<ServerName>) -> Option<Binary>;
+pub trait Solution<T, E, D: Download<T, E> + Send> {
+    async fn solve(repositories: Vec<D>) -> Option<T>;
 }
 
 pub struct Solution0;
 
 #[async_trait]
-impl Solution for Solution0 {
-    async fn solve(repositories: Vec<ServerName>) -> Option<Binary> {
+impl<T: Debug, E: Debug, D: Download<T, E> + Send + 'static> Solution<T, E, D> for Solution0 {
+    async fn solve(mut repositories: Vec<D>) -> Option<T> {
         if repositories.is_empty() {
             return None;
         }
 
         let futures: Vec<_> = repositories
-            .into_iter()
-            .map(|repo| Box::pin(download(repo)))
+            .iter_mut()
+            .map(|repo| Box::pin(repo.download()))
             .collect();
 
         let future = SolutionFuture::new(futures);
@@ -118,5 +118,166 @@ where
         }
 
         Poll::Pending
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use async_trait::async_trait;
+    use tokio::time;
+
+    use crate::statement::Download;
+
+    use super::{Solution, Solution0};
+
+    struct MockRepo {
+        value: String,
+        tick_times: usize,
+        failing: bool,
+        panic: bool,
+    }
+
+    #[async_trait]
+    impl Download<String, String> for MockRepo {
+        async fn download(&mut self) -> Result<String, String> {
+            let mut interval = time::interval(time::Duration::from_millis(1));
+
+            for _i in 0..self.tick_times {
+                interval.tick().await;
+            }
+
+            if self.panic {
+                unreachable!();
+            }
+
+            if self.failing {
+                Err(self.value.clone())
+            } else {
+                Ok(self.value.clone())
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn should_return_none_for_empty_vec() {
+        let repos: Vec<MockRepo> = vec![];
+
+        assert_eq!(Solution0::solve(repos).await, None);
+    }
+
+    #[tokio::test]
+    async fn should_wait_success_for_single_repo() {
+        let repos = vec![MockRepo {
+            failing: false,
+            panic: false,
+            tick_times: 3,
+            value: "1".to_owned(),
+        }];
+
+        assert_eq!(Solution0::solve(repos).await, Some("1".to_owned()));
+    }
+
+    #[tokio::test]
+    async fn should_wait_error_for_single_repo() {
+        let repos = vec![MockRepo {
+            failing: true,
+            panic: false,
+            tick_times: 3,
+            value: "1".to_owned(),
+        }];
+
+        assert_eq!(Solution0::solve(repos).await, None);
+    }
+
+    #[tokio::test]
+    async fn should_not_call_future_again_after_it_is_failed() {
+        let repos = vec![
+            MockRepo {
+                failing: false,
+                panic: false,
+                tick_times: 3,
+                value: "1".to_owned(),
+            },
+            MockRepo {
+                failing: true,
+                panic: false,
+                tick_times: 1,
+                value: "2".to_owned(),
+            },
+        ];
+
+        assert_eq!(Solution0::solve(repos).await, Some("1".to_owned()));
+    }
+
+    #[tokio::test]
+    async fn should_not_call_future_when_another_future_succeeded() {
+        let repos = vec![
+            MockRepo {
+                failing: false,
+                panic: false,
+                tick_times: 3,
+                value: "1".to_owned(),
+            },
+            MockRepo {
+                failing: true,
+                panic: true,
+                tick_times: 4,
+                value: "2".to_owned(),
+            },
+        ];
+
+        assert_eq!(Solution0::solve(repos).await, Some("1".to_owned()));
+    }
+
+    #[tokio::test]
+    async fn should_pick_first_succeeded_repo() {
+        let repos = vec![
+            MockRepo {
+                failing: true,
+                panic: false,
+                tick_times: 3,
+                value: "1".to_owned(),
+            },
+            MockRepo {
+                failing: false,
+                panic: false,
+                tick_times: 4,
+                value: "2".to_owned(),
+            },
+            MockRepo {
+                failing: false,
+                panic: false,
+                tick_times: 4,
+                value: "3".to_owned(),
+            },
+        ];
+
+        assert_eq!(Solution0::solve(repos).await, Some("2".to_owned()));
+    }
+
+    #[tokio::test]
+    async fn should_return_none_if_none_repo_succeeded() {
+        let repos = vec![
+            MockRepo {
+                failing: true,
+                panic: false,
+                tick_times: 3,
+                value: "1".to_owned(),
+            },
+            MockRepo {
+                failing: true,
+                panic: false,
+                tick_times: 4,
+                value: "2".to_owned(),
+            },
+            MockRepo {
+                failing: true,
+                panic: false,
+                tick_times: 5,
+                value: "3".to_owned(),
+            },
+        ];
+
+        assert_eq!(Solution0::solve(repos).await, None);
     }
 }

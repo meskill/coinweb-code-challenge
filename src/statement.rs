@@ -1,5 +1,6 @@
 use std::time::Instant;
 
+use async_trait::async_trait;
 use derive_more::Display;
 use thiserror::Error;
 use tokio::time;
@@ -20,16 +21,24 @@ pub struct Binary {
 #[derive(Debug, Clone)]
 pub struct ServerName(pub String);
 
-pub async fn download(server_name: ServerName) -> Result<Binary, ServerError> {
-    let mut interval = time::interval(time::Duration::from_millis(100));
-    println!("Start download {:?} at {:?}", server_name, Instant::now());
-    for _i in 0..5 {
-        interval.tick().await;
+#[async_trait]
+pub trait Download<T, E> {
+    async fn download(&mut self) -> Result<T, E>;
+}
 
-        println!("Tick download {:?} at {:?}", server_name, Instant::now());
-        if rand::random::<f32>() < 0.1 {
-            return Err(ServerError::Disconnected(server_name));
+#[async_trait]
+impl Download<Binary, ServerError> for ServerName {
+    async fn download(&mut self) -> Result<Binary, ServerError> {
+        let mut interval = time::interval(time::Duration::from_millis(100));
+        println!("Start download {:?} at {:?}", self, Instant::now());
+        for _i in 0..5 {
+            interval.tick().await;
+
+            println!("Tick download {:?} at {:?}", self, Instant::now());
+            if rand::random::<f32>() < 0.1 {
+                return Err(ServerError::Disconnected(self.clone()));
+            }
         }
+        Ok(Binary { from: self.clone() })
     }
-    Ok(Binary { from: server_name })
 }

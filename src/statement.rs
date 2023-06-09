@@ -30,11 +30,9 @@ pub trait Download<T, E> {
 impl Download<Binary, ServerError> for ServerName {
     async fn download(self) -> Result<Binary, ServerError> {
         let mut interval = time::interval(time::Duration::from_millis(100));
-        println!("Start download {:?} at {:?}", self, Instant::now());
         for _i in 0..5 {
             interval.tick().await;
 
-            println!("Tick download {:?} at {:?}", self, Instant::now());
             if rand::random::<f32>() < 0.1 {
                 return Err(ServerError::Disconnected(self));
             }

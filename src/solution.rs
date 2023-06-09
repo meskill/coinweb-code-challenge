@@ -93,8 +93,6 @@ where
     ) -> std::task::Poll<Self::Output> {
         let mut last_error = None;
 
-        println!("Check in {:?}", Instant::now());
-
         let SolutionFuture {
             futures,
             is_ready_future,
@@ -107,8 +105,6 @@ where
             }
 
             if let Poll::Ready(result) = Future::poll(future.as_mut(), cx) {
-                println!("{result:?}");
-
                 *is_ready = true;
 
                 *pending_count -= 1;
@@ -120,8 +116,6 @@ where
                 last_error = Some(result);
             }
         }
-
-        println!("________");
 
         if self.pending_count == 0 {
             // last_error should be initialized anyway in case we haven't succeeded

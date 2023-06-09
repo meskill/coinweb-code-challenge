@@ -1,6 +1,7 @@
 use solution::Solution;
 use statement::ServerName;
 
+mod retry;
 mod solution;
 mod statement;
 

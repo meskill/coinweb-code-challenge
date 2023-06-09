@@ -23,12 +23,12 @@ pub struct ServerName(pub String);
 
 #[async_trait]
 pub trait Download<T, E> {
-    async fn download(&mut self) -> Result<T, E>;
+    async fn download(self) -> Result<T, E>;
 }
 
 #[async_trait]
 impl Download<Binary, ServerError> for ServerName {
-    async fn download(&mut self) -> Result<Binary, ServerError> {
+    async fn download(self) -> Result<Binary, ServerError> {
         let mut interval = time::interval(time::Duration::from_millis(100));
         println!("Start download {:?} at {:?}", self, Instant::now());
         for _i in 0..5 {
@@ -36,9 +36,9 @@ impl Download<Binary, ServerError> for ServerName {
 
             println!("Tick download {:?} at {:?}", self, Instant::now());
             if rand::random::<f32>() < 0.1 {
-                return Err(ServerError::Disconnected(self.clone()));
+                return Err(ServerError::Disconnected(self));
             }
         }
-        Ok(Binary { from: self.clone() })
+        Ok(Binary { from: self })
     }
 }

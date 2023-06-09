@@ -6,25 +6,38 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 
+use crate::retry::Retryer;
 use crate::statement::*;
 
 #[async_trait]
-pub trait Solution<T, E, D: Download<T, E> + Send> {
+pub trait Solution<T, E, D: Download<T, E> + Send + Sync> {
     async fn solve(repositories: Vec<D>) -> Option<T>;
 }
 
 pub struct Solution0;
 
 #[async_trait]
-impl<T: Debug, E: Debug, D: Download<T, E> + Send + 'static> Solution<T, E, D> for Solution0 {
-    async fn solve(mut repositories: Vec<D>) -> Option<T> {
+impl<T: Debug, E: Debug, D: Download<T, E> + Send + Sync + 'static + Clone> Solution<T, E, D>
+    for Solution0
+{
+    async fn solve(repositories: Vec<D>) -> Option<T> {
         if repositories.is_empty() {
             return None;
         }
 
+        let retryer = Retryer::new(3);
+
         let futures: Vec<_> = repositories
-            .iter_mut()
-            .map(|repo| Box::pin(repo.download()))
+            .iter()
+            .map(|repo| {
+                Box::pin(retryer.retry(move || {
+                    // I'm not happy with cloning here, but we need to pass ownership from closure
+                    // to async block multiple times
+                    let repo = repo.clone();
+
+                    async move { repo.download().await }
+                }))
+            })
             .collect();
 
         let future = SolutionFuture::new(futures);
@@ -130,6 +143,7 @@ mod tests {
 
     use super::{Solution, Solution0};
 
+    #[derive(Clone)]
     struct MockRepo {
         value: String,
         tick_times: usize,
@@ -139,7 +153,7 @@ mod tests {
 
     #[async_trait]
     impl Download<String, String> for MockRepo {
-        async fn download(&mut self) -> Result<String, String> {
+        async fn download(self) -> Result<String, String> {
             let mut interval = time::interval(time::Duration::from_millis(1));
 
             for _i in 0..self.tick_times {
